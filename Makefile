@@ -24,7 +24,7 @@ OBJS = $(SRCS:.c=.o)
 
 INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR)
 
-CFLAGS = -Wall -O $(INC)
+CFLAGS = -Wall -O $(INC) -g
 CC = gcc
 
 RM = rm -fr

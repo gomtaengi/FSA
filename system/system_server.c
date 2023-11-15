@@ -23,6 +23,15 @@ int create_system_server()
     const char *name = "system_server";
 
     printf("여기서 시스템 프로세스를 생성합니다.\n");
-
-    return 0;
+    
+    systemPid = fork();
+    switch (systemPid) {
+        case -1:
+            break;
+        case 0:
+            system_server();
+            exit(EXIT_SUCCESS);
+        default:
+    }
+    return systemPid;
 }

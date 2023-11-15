@@ -11,5 +11,14 @@ int create_web_server()
 
     printf("여기서 Web Server 프로세스를 생성합니다.\n");
 
-    return 0;
+    systemPid = fork();
+    switch(systemPid) {
+        case -1:
+            break;
+        case 0:
+            execl("/usr/local/bin/filebrowser", "filebrowser", "-p", "8080", (char *) NULL);
+            exit(EXIT_SUCCESS);
+        default:
+    }
+    return systemPid;
 }
