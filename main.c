@@ -28,7 +28,7 @@ static void sigchldHandler(int sig) {
 int main()
 {
     pid_t spid, gpid, ipid, wpid;
-    int status, savedErrno;
+    int status;
 
     struct sigaction sa;
     

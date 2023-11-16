@@ -65,7 +65,7 @@ int input()
     
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
-    sa.sa_handler = segfault_handler;
+    sa.sa_handler = (void*)segfault_handler;
 
     if (sigaction(SIGSEGV, &sa, NULL) == -1) {
         puts("sigaction");
