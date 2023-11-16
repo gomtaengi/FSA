@@ -16,6 +16,7 @@ int create_gui()
     systemPid = fork();
     switch (systemPid) {
         case -1:
+            puts("gui fork failed...");
             break;
         case 0:
             execl("/usr/bin/google-chrome-stable", "google-chrome-stable", "http://localhost:8080", NULL);

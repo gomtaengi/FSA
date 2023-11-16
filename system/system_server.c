@@ -27,11 +27,15 @@ int create_system_server()
     systemPid = fork();
     switch (systemPid) {
         case -1:
+            puts("system server fork failed...");
             break;
         case 0:
+            if (prctl(PR_SET_NAME, (unsigned long)name) < 0)
+                perror("prctl()");
             system_server();
             exit(EXIT_SUCCESS);
         default:
     }
     return systemPid;
 }
+    

@@ -14,6 +14,7 @@ int create_web_server()
     systemPid = fork();
     switch(systemPid) {
         case -1:
+            puts("web server fork failed...");
             break;
         case 0:
             execl("/usr/local/bin/filebrowser", "filebrowser", "-p", "8080", (char *) NULL);
