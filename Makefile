@@ -23,8 +23,9 @@ SRCS = $(addprefix $(SRC_DIR), $(SRC_FILES))
 OBJS = $(SRCS:.c=.o)
 
 INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR)
+LIB = -lpthread
 
-CFLAGS = -Wall -O $(INC) -g
+CFLAGS = -Wall -O $(INC) -g $(LIB)
 CC = gcc
 
 RM = rm -fr

@@ -3,6 +3,7 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <time.h>
+#include <pthread.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -13,7 +14,8 @@ static int toy_timer = 0;
 
 void timer_handler()
 {
-    printf("timer_expire_signal_handler: %d\n", toy_timer++);
+    toy_timer++;
+    // printf("timer_expire_signal_handler: %d\n", toy_timer++);
 }
 
 int posix_sleep_ms(unsigned int timeout_ms)
@@ -24,6 +26,46 @@ int posix_sleep_ms(unsigned int timeout_ms)
     sleep_time.tv_nsec = (timeout_ms % MILLISEC_PER_SECOND) * (NANOSEC_PER_USEC * USEC_PER_MILLISEC);
 
     return nanosleep(&sleep_time, NULL);
+}
+
+void *watchdog_thread(void *arg)
+{
+    while (1)
+    {
+        posix_sleep_ms(1000);
+    }
+
+    return 0;
+}
+
+void *monitor_thread(void *arg)
+{
+    while (1)
+    {
+        posix_sleep_ms(1000);
+    }
+
+    return 0;
+}
+
+void *disk_service_thread(void *arg)
+{
+    while (1)
+    {
+        posix_sleep_ms(1000);
+    }
+
+    return 0;
+}
+
+void *camera_service_thread(void *arg)
+{
+    while (1)
+    {
+        posix_sleep_ms(1000);
+    }
+
+    return 0;
 }
 
 int system_server()
@@ -40,6 +82,12 @@ int system_server()
         }
     };
 
+    pthread_t watchdog_thread_tid;
+    pthread_t monitor_thread_tid;
+    pthread_t disk_service_thread_tid;
+    pthread_t camera_service_thread_tid;
+    int threads[4];
+
     printf("나 system_server 프로세스!\n");
 
     sigemptyset(&sa.sa_mask);
@@ -49,11 +97,21 @@ int system_server()
         puts("sigaction");
         exit(EXIT_FAILURE);
     }
-
     setitimer(ITIMER_REAL, &itv, NULL);
+
+    threads[0] = pthread_create(&watchdog_thread_tid, NULL, watchdog_thread, NULL);
+    threads[1] = pthread_create(&monitor_thread_tid, NULL, monitor_thread, NULL);
+    threads[2] = pthread_create(&disk_service_thread_tid, NULL, 
+        disk_service_thread, NULL);
+    threads[3] = pthread_create(&camera_service_thread_tid, NULL, 
+        camera_service_thread, NULL);
 
     while (1) {
         posix_sleep_ms(5000);
+    }
+
+    for (int i=0; i<4; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     return 0;
