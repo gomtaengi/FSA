@@ -68,14 +68,25 @@ void *monitor_thread(void *arg)
 void *disk_service_thread(void *arg)
 {
     char *s = arg;
+    FILE *apipe;
+    char buf[1024];
+    char cmd[] = "df -h ./";
 
     printf("%s", s);
 
     while (1)
     {
-        posix_sleep_ms(1000);
-    }
+        apipe = popen(cmd, "r");
+        if (apipe) {
+            while (fgets(buf, sizeof(buf), apipe))
+                printf("%s", buf);
+            pclose(apipe);
+        } else {
+            perror("popen() 실패...");
+        }
 
+        posix_sleep_ms(10000);
+    }
     return 0;
 }
 
