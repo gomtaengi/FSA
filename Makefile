@@ -22,24 +22,37 @@ SRC_FILES = main.c \
 SRCS = $(addprefix $(SRC_DIR), $(SRC_FILES))
 OBJS = $(SRCS:.c=.o)
 
-INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR)
-LIB = -lpthread
+HAL_DIR = ./hal/
+HAL_FILES = camera_HAL.cpp ControlThread.cpp
+CXX_SRCS = $(addprefix $(HAL_DIR), $(HAL_FILES))
+CXX_OBJS = $(CXX_SRCS:.cpp=.o)
 
+INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR) -I$(HAL_DIR)
+CXX_INC = -I$(HAL_DIR)
+
+LIB = -lpthread
 CFLAGS = -Wall -O $(INC) -g $(LIB)
+
+CXXLIBS = -lpthread -lm -lrt
+CXXFLAGS = -Wall $(CXX_INC) -g $(CXXLIBS)
+
 CC = gcc
+CXX = g++
 
 RM = rm -fr
 
-.c .o :
+
+.cpp .c .o:
+	$(CXX) $(CXXFLAGS) -c
 	$(CC) $(CFLAGS) -c 
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $@
+$(TARGET): $(OBJS) $(CXX_OBJS)
+	$(CXX) $(CXXFLAGS) $(OBJS) $(CXX_OBJS) -o $@
 
 clean:
-	$(RM) $(OBJS) core
+	$(RM) $(OBJS) $(CXX_OBJS) core
 
 fclean: clean 
 	$(RM) $(TARGET)

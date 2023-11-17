@@ -9,12 +9,21 @@
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
+#include <camera_HAL.h>
+
+
+pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
+bool            system_loop_exit = false;
 
 static int toy_timer = 0;
+
+void signal_exit(void);
 
 void timer_handler()
 {
     toy_timer++;
+    signal_exit();
     // printf("timer_expire_signal_handler: %d\n", toy_timer++);
 }
 
@@ -30,6 +39,10 @@ int posix_sleep_ms(unsigned int timeout_ms)
 
 void *watchdog_thread(void *arg)
 {
+    char *s = arg;
+
+    printf("%s", s);
+
     while (1)
     {
         posix_sleep_ms(1000);
@@ -40,6 +53,10 @@ void *watchdog_thread(void *arg)
 
 void *monitor_thread(void *arg)
 {
+    char *s = arg;
+
+    printf("%s", s);
+
     while (1)
     {
         posix_sleep_ms(1000);
@@ -50,6 +67,10 @@ void *monitor_thread(void *arg)
 
 void *disk_service_thread(void *arg)
 {
+    char *s = arg;
+
+    printf("%s", s);
+
     while (1)
     {
         posix_sleep_ms(1000);
@@ -60,12 +81,27 @@ void *disk_service_thread(void *arg)
 
 void *camera_service_thread(void *arg)
 {
+    char *s = arg;
+
+    printf("%s", s);
+
+    toy_camera_open();
+    toy_camera_take_picture();
+
     while (1)
     {
         posix_sleep_ms(1000);
     }
 
     return 0;
+}
+
+void signal_exit(void)
+{
+    pthread_mutex_lock(&system_loop_mutex);
+    system_loop_exit = true;
+    pthread_cond_broadcast(&system_loop_cond);
+    pthread_mutex_unlock(&system_loop_mutex);
 }
 
 int system_server()
@@ -99,12 +135,21 @@ int system_server()
     }
     setitimer(ITIMER_REAL, &itv, NULL);
 
-    threads[0] = pthread_create(&watchdog_thread_tid, NULL, watchdog_thread, NULL);
-    threads[1] = pthread_create(&monitor_thread_tid, NULL, monitor_thread, NULL);
+    threads[0] = pthread_create(&watchdog_thread_tid, NULL, watchdog_thread, "watchdog thread\n");
+    threads[1] = pthread_create(&monitor_thread_tid, NULL, monitor_thread, "monitor thread\n");
     threads[2] = pthread_create(&disk_service_thread_tid, NULL, 
-        disk_service_thread, NULL);
+        disk_service_thread, "disk service thread\n");
     threads[3] = pthread_create(&camera_service_thread_tid, NULL, 
-        camera_service_thread, NULL);
+        camera_service_thread, "camera service thread\n");
+
+    printf("system init done.  waiting...");
+
+    pthread_mutex_lock(&system_loop_mutex);
+    while (system_loop_exit == false) {
+        pthread_cond_wait(&system_loop_cond, &system_loop_mutex);
+    }
+    pthread_mutex_unlock(&system_loop_mutex);
+    puts("<== system\n");
 
     while (1) {
         posix_sleep_ms(5000);
