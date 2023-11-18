@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <mqueue.h>
 #include <assert.h>
+#include <semaphore.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -26,12 +27,25 @@ static mqd_t camera_queue;
 
 static int toy_timer = 0;
 
+pthread_mutex_t toy_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+static sem_t global_timer_sem;
+static bool global_timer_stopped = false;
+
 void signal_exit(void);
 
-void timer_handler()
+static void timer_expire_signal_handler()
 {
+    if (sem_post(&global_timer_sem) == -1)
+        exit(EXIT_FAILURE);
+}
+
+void system_timeout_handler()
+{
+    pthread_mutex_lock(&toy_timer_mutex);
     toy_timer++;
-    signal_exit();
+    printf("toy_timer: %d\n", toy_timer);
+    pthread_mutex_unlock(&toy_timer_mutex);
+    // signal_exit();
     // printf("timer_expire_signal_handler: %d\n", toy_timer++);
 }
 
@@ -43,6 +57,29 @@ int posix_sleep_ms(unsigned int timeout_ms)
     sleep_time.tv_nsec = (timeout_ms % MILLISEC_PER_SECOND) * (NANOSEC_PER_USEC * USEC_PER_MILLISEC);
 
     return nanosleep(&sleep_time, NULL);
+}
+
+void set_periodic_timer(long sec_delay, long usec_delay)
+{
+	struct itimerval itimer_val = {
+		 .it_interval = { .tv_sec = sec_delay, .tv_usec = usec_delay },
+		 .it_value = { .tv_sec = sec_delay, .tv_usec = usec_delay }
+    };
+	setitimer(ITIMER_REAL, &itimer_val, NULL);
+}
+
+static void *timer_thread(void *not_used)
+{
+    sem_init(&global_timer_sem, 0, 1);
+    signal(SIGALRM, timer_expire_signal_handler);
+    set_periodic_timer(3, 0);
+
+	while (!global_timer_stopped) {
+		if (sem_wait(&global_timer_sem) == -1)
+            exit(EXIT_FAILURE);
+        system_timeout_handler();
+	}
+	return 0;
 }
 
 void *watchdog_thread(void *arg)
@@ -174,34 +211,14 @@ void signal_exit(void)
 
 int system_server()
 {
-    struct sigaction  sa;
-    struct itimerval itv = {
-        .it_interval = {
-            .tv_sec = 5,
-            .tv_usec = 0
-        },
-        .it_value = {
-            .tv_sec = 5,
-            .tv_usec = 0,
-        }
-    };
-
     pthread_t watchdog_thread_tid;
     pthread_t monitor_thread_tid;
     pthread_t disk_service_thread_tid;
     pthread_t camera_service_thread_tid;
-    int threads[4];
+    pthread_t timer_thread_tid;
+    int threads[5];
 
     printf("나 system_server 프로세스!\n");
-
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sa.sa_handler = timer_handler;
-    if (sigaction(SIGALRM, &sa, NULL) == -1) {
-        puts("sigaction");
-        exit(EXIT_FAILURE);
-    }
-    setitimer(ITIMER_REAL, &itv, NULL);
 
     watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
     assert(watchdog_queue != -1);
@@ -218,6 +235,7 @@ int system_server()
         disk_service_thread, "disk service thread\n");
     threads[3] = pthread_create(&camera_service_thread_tid, NULL, 
         camera_service_thread, "camera service thread\n");
+    threads[4] = pthread_create(&timer_thread_tid, NULL, timer_thread, "timer thread\n");
 
     puts("system init done.  waiting...");
 
@@ -232,7 +250,7 @@ int system_server()
         posix_sleep_ms(5000);
     }
 
-    for (int i=0; i<4; i++) {
+    for (int i=0; i<5; i++) {
         pthread_join(threads[i], NULL);
     }
 
