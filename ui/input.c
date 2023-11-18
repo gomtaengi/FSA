@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
 #include <execinfo.h>
 #include <signal.h>
 #include <stdio.h>
@@ -12,12 +16,12 @@
 #include <assert.h>
 #include <mqueue.h>
 
-
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
 #include <toy_message.h>
+#include <shared_memory.h>
 
 #define TOY_TOK_BUFSIZE 64
 #define TOY_TOK_DELIM " \t\r\n\a"
@@ -30,6 +34,9 @@ static mqd_t watchdog_queue;
 static mqd_t monitor_queue;
 static mqd_t disk_queue;
 static mqd_t camera_queue;
+static shm_sensor_t *the_sensor_info = NULL;
+
+int shm_id[SHM_KEY_MAX - SHM_KEY_BASE];
 
 typedef struct _sig_ucontext {
     unsigned long uc_flags;
@@ -77,21 +84,34 @@ segfault_handler(int sig_num, siginfo_t *info, void *ucontext) {
 void *sensor_thread(void *arg)
 {
     char *s = arg;
-    int i = 0;
+    int mqretcode = 0;
+    toy_msg_t msg;
+    // int i = 0;
 
     printf("%s", s);
 
     while (1) {
-        i = 0;
-        pthread_mutex_lock(&global_message_mutex);
-        while (global_message[i] != 0) {
-            printf("%c", global_message[i]);
-            fflush(stdout);
-            posix_sleep_ms(500);
-            i++;
-        }
-        pthread_mutex_unlock(&global_message_mutex);
         posix_sleep_ms(5000);
+
+        msg.msg_type = 1;
+        msg.param1 = shm_id[0];
+        msg.param2 = 0;
+        
+        the_sensor_info->temp = 35;
+        the_sensor_info->humidity = 80;
+        the_sensor_info->press = 55;
+        mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
+        assert(mqretcode == 0);
+
+        // i = 0;
+        // pthread_mutex_lock(&global_message_mutex);
+        // while (global_message[i] != 0) {
+        //     printf("%c", global_message[i]);
+        //     fflush(stdout);
+        //     posix_sleep_ms(500);
+        //     i++;
+        // }
+        // pthread_mutex_unlock(&global_message_mutex);
     }
     return 0;
 }
@@ -312,6 +332,18 @@ int input()
 
     if (sigaction(SIGSEGV, &sa, NULL) == -1) {
         puts("sigaction");
+        exit(EXIT_FAILURE);
+    }
+
+    // 공유 메모리 생성
+    shm_id[0] = shmget(SHM_KEY_SENSOR, sizeof(shm_sensor_t), IPC_CREAT | 0666);
+    if (shm_id[0] == -1) {
+        perror("shmget failed...");
+        exit(EXIT_FAILURE);
+    }
+    the_sensor_info = shmat(shm_id[0], 0, 0);
+    if (the_sensor_info == (shm_sensor_t*)-1) {
+        perror("shmat failed...");
         exit(EXIT_FAILURE);
     }
 

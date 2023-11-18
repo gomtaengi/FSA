@@ -7,6 +7,7 @@
 #include <mqueue.h>
 #include <assert.h>
 #include <semaphore.h>
+#include <sys/shm.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -14,6 +15,7 @@
 #include <web_server.h>
 #include <camera_HAL.h>
 #include <toy_message.h>
+#include <shared_memory.h>
 
 
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -30,6 +32,7 @@ static int toy_timer = 0;
 pthread_mutex_t toy_timer_mutex = PTHREAD_MUTEX_INITIALIZER;
 static sem_t global_timer_sem;
 static bool global_timer_stopped = false;
+static shm_sensor_t *the_sensor_info = NULL;
 
 void signal_exit(void);
 
@@ -97,7 +100,8 @@ void *watchdog_thread(void *arg)
             return 0;
         if (attr.mq_curmsgs) {
             mqretcode = mq_receive(watchdog_queue, (char *)&msg, sizeof(msg), NULL);
-            if (!mqretcode) {
+            if (mqretcode >= 0) {
+                printf("watchdog_thread: 메시지가 도착했습니다.\n");
                 printf("msg.msg_type: %u\n", msg.msg_type);
                 printf("msg.param1: %u\n", msg.param1);
                 printf("msg.param2: %u\n", msg.param2);
@@ -107,6 +111,8 @@ void *watchdog_thread(void *arg)
 
     return 0;
 }
+
+#define SENSOR_DATA 1
 
 void *monitor_thread(void *arg)
 {
@@ -123,14 +129,29 @@ void *monitor_thread(void *arg)
             return 0;
         if (attr.mq_curmsgs) {
             mqretcode = mq_receive(monitor_queue, (char *)&msg, sizeof(msg), NULL);
-            if (!mqretcode) {
+            if (mqretcode >= 0) {
+                printf("monitor_queue: 메시지가 도착했습니다.\n");
                 printf("msg.msg_type: %u\n", msg.msg_type);
                 printf("msg.param1: %u\n", msg.param1);
                 printf("msg.param2: %u\n", msg.param2);
+                if (msg.msg_type == SENSOR_DATA) {
+                    shm_id[0] = msg.param1;
+                    the_sensor_info = shmat(shm_id[0], 0, SHM_RDONLY);
+                    if (the_sensor_info == (shm_sensor_t*)-1) {
+                        perror("shmat failed...");
+                        exit(EXIT_FAILURE);
+                    }
+                    printf("sensor temp: %d\n", the_sensor_info->temp);
+                    printf("sensor press: %d\n", the_sensor_info->press);
+                    printf("sensor humidity: %d\n", the_sensor_info->humidity);
+                    if (shmdt(the_sensor_info) == -1) {
+                        perror("shmdt failed...");
+                        exit(EXIT_FAILURE);
+                    }
+                }
             }
         }
     }
-
     return 0;
 }
 
@@ -160,7 +181,8 @@ void *disk_service_thread(void *arg)
             return 0;
         if (attr.mq_curmsgs) {
             mqretcode = mq_receive(disk_queue, (char *)&msg, sizeof(msg), NULL);
-            if (!mqretcode) {
+            if (mqretcode >= 0) {
+                printf("disk_queue: 메시지가 도착했습니다.\n");
                 printf("msg.msg_type: %u\n", msg.msg_type);
                 printf("msg.param1: %u\n", msg.param1);
                 printf("msg.param2: %u\n", msg.param2);
@@ -187,10 +209,11 @@ void *camera_service_thread(void *arg)
             return 0;
         if (attr.mq_curmsgs) {
             mqretcode = mq_receive(camera_queue, (char *)&msg, sizeof(msg), NULL);
-            printf("msg.msg_type: %u\n", msg.msg_type);
-            printf("msg.param1: %u\n", msg.param1);
-            printf("msg.param2: %u\n", msg.param2);
             if (mqretcode >= 0) {
+                printf("camera_queue: 메시지가 도착했습니다.\n");
+                printf("msg.msg_type: %u\n", msg.msg_type);
+                printf("msg.param1: %u\n", msg.param1);
+                printf("msg.param2: %u\n", msg.param2);
                 if (msg.msg_type == 1) {
                     toy_camera_take_picture();
                 }
