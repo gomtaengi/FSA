@@ -27,7 +27,7 @@ HAL_FILES = camera_HAL.cpp ControlThread.cpp
 CXX_SRCS = $(addprefix $(HAL_DIR), $(HAL_FILES))
 CXX_OBJS = $(CXX_SRCS:.cpp=.o)
 
-INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR) -I$(HAL_DIR)
+INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR) -I$(HAL_DIR) -I./
 CXX_INC = -I$(HAL_DIR)
 
 LIB = -lpthread

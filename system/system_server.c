@@ -4,17 +4,25 @@
 #include <signal.h>
 #include <time.h>
 #include <pthread.h>
+#include <mqueue.h>
+#include <assert.h>
 
 #include <system_server.h>
 #include <gui.h>
 #include <input.h>
 #include <web_server.h>
 #include <camera_HAL.h>
+#include <toy_message.h>
 
 
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
 bool            system_loop_exit = false;
+
+static mqd_t watchdog_queue;
+static mqd_t monitor_queue;
+static mqd_t disk_queue;
+static mqd_t camera_queue;
 
 static int toy_timer = 0;
 
@@ -40,12 +48,24 @@ int posix_sleep_ms(unsigned int timeout_ms)
 void *watchdog_thread(void *arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
+    struct mq_attr attr;
 
     printf("%s", s);
 
     while (1)
     {
-        posix_sleep_ms(1000);
+        if (mq_getattr(watchdog_queue, &attr) == -1)
+            return 0;
+        if (attr.mq_curmsgs) {
+            mqretcode = mq_receive(watchdog_queue, (char *)&msg, sizeof(msg), NULL);
+            if (!mqretcode) {
+                printf("msg.msg_type: %u\n", msg.msg_type);
+                printf("msg.param1: %u\n", msg.param1);
+                printf("msg.param2: %u\n", msg.param2);
+            }
+        }
     }
 
     return 0;
@@ -54,12 +74,24 @@ void *watchdog_thread(void *arg)
 void *monitor_thread(void *arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
+    struct mq_attr attr;
 
     printf("%s", s);
 
     while (1)
     {
-        posix_sleep_ms(1000);
+        if (mq_getattr(monitor_queue, &attr) == -1)
+            return 0;
+        if (attr.mq_curmsgs) {
+            mqretcode = mq_receive(monitor_queue, (char *)&msg, sizeof(msg), NULL);
+            if (!mqretcode) {
+                printf("msg.msg_type: %u\n", msg.msg_type);
+                printf("msg.param1: %u\n", msg.param1);
+                printf("msg.param2: %u\n", msg.param2);
+            }
+        }
     }
 
     return 0;
@@ -71,21 +103,32 @@ void *disk_service_thread(void *arg)
     FILE *apipe;
     char buf[1024];
     char cmd[] = "df -h ./";
+    int mqretcode;
+    toy_msg_t msg;
+    struct mq_attr attr;
 
     printf("%s", s);
 
     while (1)
     {
-        apipe = popen(cmd, "r");
-        if (apipe) {
-            while (fgets(buf, sizeof(buf), apipe))
-                printf("%s", buf);
-            pclose(apipe);
-        } else {
-            perror("popen() 실패...");
+        // apipe = popen(cmd, "r");
+        // if (apipe) {
+        //     while (fgets(buf, sizeof(buf), apipe))
+        //         printf("%s", buf);
+        //     pclose(apipe);
+        // } else {
+        //     perror("popen() 실패...");
+        // }
+        if (mq_getattr(disk_queue, &attr) == -1)
+            return 0;
+        if (attr.mq_curmsgs) {
+            mqretcode = mq_receive(disk_queue, (char *)&msg, sizeof(msg), NULL);
+            if (!mqretcode) {
+                printf("msg.msg_type: %u\n", msg.msg_type);
+                printf("msg.param1: %u\n", msg.param1);
+                printf("msg.param2: %u\n", msg.param2);
+            }
         }
-
-        posix_sleep_ms(10000);
     }
     return 0;
 }
@@ -93,15 +136,29 @@ void *disk_service_thread(void *arg)
 void *camera_service_thread(void *arg)
 {
     char *s = arg;
+    int mqretcode;
+    toy_msg_t msg;
+    struct mq_attr attr;
 
     printf("%s", s);
-
+    
     toy_camera_open();
-    toy_camera_take_picture();
 
     while (1)
     {
-        posix_sleep_ms(1000);
+        if (mq_getattr(camera_queue, &attr) == -1)
+            return 0;
+        if (attr.mq_curmsgs) {
+            mqretcode = mq_receive(camera_queue, (char *)&msg, sizeof(msg), NULL);
+            printf("msg.msg_type: %u\n", msg.msg_type);
+            printf("msg.param1: %u\n", msg.param1);
+            printf("msg.param2: %u\n", msg.param2);
+            if (mqretcode >= 0) {
+                if (msg.msg_type == 1) {
+                    toy_camera_take_picture();
+                }
+            }
+        }
     }
 
     return 0;
@@ -146,6 +203,15 @@ int system_server()
     }
     setitimer(ITIMER_REAL, &itv, NULL);
 
+    watchdog_queue = mq_open("/watchdog_queue", O_RDWR);
+    assert(watchdog_queue != -1);
+    monitor_queue = mq_open("/monitor_queue", O_RDWR);
+    assert(monitor_queue != -1);
+    disk_queue = mq_open("/disk_queue", O_RDWR);
+    assert(disk_queue != -1);
+    camera_queue = mq_open("/camera_queue", O_RDWR);
+    assert(camera_queue != -1);
+
     threads[0] = pthread_create(&watchdog_thread_tid, NULL, watchdog_thread, "watchdog thread\n");
     threads[1] = pthread_create(&monitor_thread_tid, NULL, monitor_thread, "monitor thread\n");
     threads[2] = pthread_create(&disk_service_thread_tid, NULL, 
@@ -153,7 +219,7 @@ int system_server()
     threads[3] = pthread_create(&camera_service_thread_tid, NULL, 
         camera_service_thread, "camera service thread\n");
 
-    printf("system init done.  waiting...");
+    puts("system init done.  waiting...");
 
     pthread_mutex_lock(&system_loop_mutex);
     while (system_loop_exit == false) {
