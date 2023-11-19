@@ -5,6 +5,8 @@
 #include <sys/sem.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <execinfo.h>
 #include <signal.h>
 #include <stdio.h>
@@ -15,6 +17,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include <mqueue.h>
+
 
 #include <system_server.h>
 #include <gui.h>
@@ -121,6 +124,7 @@ int toy_send(char **args);
 int toy_mutex(char **args);
 int toy_shell(char **args);
 int toy_message_queue(char **args);
+int toy_read_elf_header(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -128,6 +132,7 @@ char *builtin_str[] = {
     "mu",
     "sh",
     "mq",
+    "elf",
     "exit"
 };
 
@@ -136,6 +141,7 @@ int (*builtin_func[]) (char **) = {
     &toy_mutex,
     &toy_shell,
     &toy_message_queue,
+    &toy_read_elf_header,
     &toy_exit
 };
 
@@ -189,6 +195,41 @@ int toy_message_queue(char **args)
         assert(mqretcode == 0);
     }
 
+    return 1;
+}
+
+int toy_read_elf_header(char **args)
+{
+    int in_fd;
+    struct stat st;
+    Elf64Hdr *map;
+
+    in_fd = open("./sample/sample.elf", O_RDONLY);
+	if ( in_fd < 0 ) {
+        printf("cannot open ./sample/sample.elf\n");
+        return 1;
+    }
+
+    if (fstat(in_fd, &st)) {
+        close(in_fd);
+        perror("fstat failed...");
+        return 0;
+    }
+
+    map = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, in_fd, 0);
+    if (map == MAP_FAILED) {
+        close(in_fd);
+        perror("mmap failed...");
+        return 0;
+    }
+
+    printf("Real size: %lu\n", st.st_size);
+    printf("Object file type: %u\n", map->e_type);
+    printf("Architrecture: %u\n", map->e_machine);
+    printf("Object file version: %u\n", map->e_version);
+    printf("Entry point virtual address: 0x%lx\n", map->e_entry);
+    printf("Program header table file offset: %lu\n", map->e_phoff);
+    munmap(map, st.st_size);
     return 1;
 }
 
