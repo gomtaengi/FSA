@@ -26,6 +26,8 @@
 #define BUF_LEN 1024
 #define TOY_TEST_FS "./fs"
 
+#define DUMP_STATE 2
+
 pthread_mutex_t system_loop_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  system_loop_cond  = PTHREAD_COND_INITIALIZER;
 bool            system_loop_exit = false;
@@ -122,6 +124,30 @@ void *watchdog_thread(void *arg)
 
 #define SENSOR_DATA 1
 
+void dump_file(char *file_name)
+{
+    char buf[BUFSIZ] = {0};
+    size_t buf_len = 0;
+    int fd = open(file_name, O_RDONLY);
+
+    while ((buf_len = read(fd, buf, BUFSIZ)) > 0) {
+        if (write(1, buf, buf_len) <= 0) {
+            break;
+        }
+    }
+    close(fd);
+}
+
+void dump_state()
+{
+    puts("======== dump state ========");
+    dump_file("/proc/version");
+    puts("============================");
+    dump_file("/proc/meminfo");
+    puts("============================");
+    
+}
+
 void *monitor_thread(void *arg)
 {
     char *s = arg;
@@ -138,10 +164,10 @@ void *monitor_thread(void *arg)
         if (attr.mq_curmsgs) {
             mqretcode = mq_receive(monitor_queue, (char *)&msg, sizeof(msg), NULL);
             if (mqretcode >= 0) {
-                // printf("monitor_queue: 메시지가 도착했습니다.\n");
-                // printf("msg.msg_type: %u\n", msg.msg_type);
-                // printf("msg.param1: %u\n", msg.param1);
-                // printf("msg.param2: %u\n", msg.param2);
+                printf("monitor_queue: 메시지가 도착했습니다.\n");
+                printf("msg.msg_type: %u\n", msg.msg_type);
+                printf("msg.param1: %u\n", msg.param1);
+                printf("msg.param2: %u\n", msg.param2);
                 if (msg.msg_type == SENSOR_DATA) {
                     shm_id[0] = msg.param1;
                     the_sensor_info = shmat(shm_id[0], 0, SHM_RDONLY);
@@ -149,13 +175,15 @@ void *monitor_thread(void *arg)
                         perror("shmat failed...");
                         exit(EXIT_FAILURE);
                     }
-                    // printf("sensor temp: %d\n", the_sensor_info->temp);
-                    // printf("sensor press: %d\n", the_sensor_info->press);
-                    // printf("sensor humidity: %d\n", the_sensor_info->humidity);
+                    printf("sensor temp: %d\n", the_sensor_info->temp);
+                    printf("sensor press: %d\n", the_sensor_info->press);
+                    printf("sensor humidity: %d\n", the_sensor_info->humidity);
                     if (shmdt(the_sensor_info) == -1) {
                         perror("shmdt failed...");
                         exit(EXIT_FAILURE);
                     }
+                } else if (msg.msg_type == DUMP_STATE) {
+                    dump_state();
                 }
             }
         }
@@ -198,7 +226,7 @@ void display_inotify_event(int fd, int read_len, int total_size)
     printf("Last status change: %s", ctime(&sb.st_ctime));
 }
 
-int get_dir_size()
+int get_dir_size(char *dir)
 {
     DIR *dirp;
     struct dirent *dp;
@@ -206,7 +234,7 @@ int get_dir_size()
     int size = 0;
     char file_name[261] = {0};
 
-    dirp = opendir(TOY_TEST_FS);
+    dirp = opendir(dir);
     if (dirp == NULL) {
         perror("opendir");
         exit(EXIT_FAILURE);
@@ -222,7 +250,11 @@ int get_dir_size()
             perror("stat");
             exit(EXIT_FAILURE);
         }
-        size += sb.st_size;
+        if (S_ISDIR(sb.st_mode)) {
+            size += get_dir_size(file_name);
+        } else {
+            size += sb.st_size;
+        }
     }
 
     closedir(dirp);
@@ -271,7 +303,7 @@ void *disk_service_thread(void *arg)
 
         for (p=buf; p<buf+numRead;) {
             event = (struct inotify_event*)p;
-            total_size = get_dir_size();
+            total_size = get_dir_size(directory);
             display_inotify_event(event->wd, numRead, total_size);
             p += sizeof(struct inotify_event) + event->len;
         }
@@ -298,6 +330,7 @@ void *disk_service_thread(void *arg)
     return 0;
 }
 
+
 void *camera_service_thread(void *arg)
 {
     char *s = arg;
@@ -322,6 +355,8 @@ void *camera_service_thread(void *arg)
                 printf("msg.param2: %u\n", msg.param2);
                 if (msg.msg_type == 1) {
                     toy_camera_take_picture();
+                } else if (msg.msg_type == DUMP_STATE) {
+                    toy_camera_dump();
                 }
             }
         }
