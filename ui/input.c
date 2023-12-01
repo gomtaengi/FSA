@@ -17,6 +17,8 @@
 #include <pthread.h>
 #include <assert.h>
 #include <mqueue.h>
+#include <seccomp.h>
+#include <fcntl.h>
 
 
 #include <system_server.h>
@@ -127,6 +129,7 @@ int toy_shell(char **args);
 int toy_message_queue(char **args);
 int toy_read_elf_header(char **args);
 int toy_dump_state(char **args);
+int toy_mincore(char **args);
 int toy_exit(char **args);
 
 char *builtin_str[] = {
@@ -136,6 +139,7 @@ char *builtin_str[] = {
     "mq",
     "elf",
     "dump",
+    "mincore",
     "exit"
 };
 
@@ -146,6 +150,7 @@ int (*builtin_func[]) (char **) = {
     &toy_message_queue,
     &toy_read_elf_header,
     &toy_dump_state,
+    &toy_mincore,
     &toy_exit
 };
 
@@ -249,6 +254,19 @@ int toy_dump_state(char **args)
     assert(mqretcode == 0);
     mqretcode = mq_send(monitor_queue, (char *)&msg, sizeof(msg), 0);
     assert(mqretcode == 0);
+
+    return 1;
+}
+
+int toy_mincore(char **args)
+{
+    unsigned char vec[20];
+    int res;
+    size_t page = sysconf(_SC_PAGESIZE);
+    void *addr = mmap(NULL, 20 * page, PROT_READ | PROT_WRITE,
+                    MAP_NORESERVE | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    res = mincore(addr, 10 * page, vec);
+    assert(res == 0);
 
     return 1;
 }
@@ -378,6 +396,28 @@ void *command_thread(void *arg)
     return 0;
 }
 
+void seccomp_setup()
+{
+    scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_ALLOW);
+    if (ctx == NULL) {
+        perror("seccomp_init");
+        exit(EXIT_FAILURE);
+    }
+
+    int rc = seccomp_rule_add(ctx, SCMP_ACT_ERRNO(EPERM), SCMP_SYS(mincore), 0);
+    if (rc < 0) {
+        perror("seccomp_rule_add");
+        exit(EXIT_FAILURE);
+    }
+
+    rc = seccomp_load(ctx);
+    if (rc < 0) {
+        perror("seccomp_load");
+        exit(EXIT_FAILURE);
+    }
+
+    seccomp_release(ctx);
+}
 
 int input()
 {
@@ -390,11 +430,12 @@ int input()
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
     sa.sa_handler = (void*)segfault_handler;
-
     if (sigaction(SIGSEGV, &sa, NULL) == -1) {
         puts("sigaction");
         exit(EXIT_FAILURE);
     }
+
+    seccomp_setup();
 
     // 공유 메모리 생성
     shm_id[0] = shmget(SHM_KEY_SENSOR, sizeof(shm_sensor_t), IPC_CREAT | 0666);

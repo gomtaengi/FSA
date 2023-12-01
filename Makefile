@@ -30,11 +30,11 @@ CXX_OBJS = $(CXX_SRCS:.c=.o)
 INC = -I$(SYSTEM_DIR) -I$(UI_DIR) -I$(WEB_SERVER_DIR) -I$(HAL_DIR) -I./ -I$(HAL_DIR)toy -I$(HAL_DIR)oem
 CXX_INC = -I$(HAL_DIR) -I$(HAL_DIR)toy -I$(HAL_DIR)oem
 
-LIB = -lpthread
+LIB = -lpthread -lseccomp
 CFLAGS = -Wall -O $(INC) -g $(LIB)
 
-CXXLIBS = -lpthread -lm -lrt
-CXXFLAGS = -Wall $(CXX_INC) -g $(CXXLIBS)
+CXXLIBS = -lpthread -lm -lrt -lseccomp
+CXXFLAGS = -Wall $(CXX_INC) -g $(CXXLIBS) 
 
 CC = gcc
 CXX = g++
@@ -49,7 +49,7 @@ RM = rm -fr
 all: $(TARGET) libcamera.toy.so libcamera.oem.so
 
 $(TARGET): $(OBJS) $(CXX_OBJS)
-	$(CXX) $(CXXFLAGS) $(OBJS) $(CXX_OBJS) -o $@
+	$(CXX) -o $@ $(OBJS) $(CXX_OBJS) $(CXXFLAGS)
 
 clean:
 	$(RM) $(OBJS) $(CXX_OBJS) core
