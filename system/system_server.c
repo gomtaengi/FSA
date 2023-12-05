@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <sys/prctl.h>
 #include <sys/time.h>
@@ -14,6 +15,11 @@
 #include <unistd.h>
 #include <sys/sysmacros.h>
 #include <dirent.h>
+#include <linux/unistd.h>
+#include <linux/kernel.h>
+#include <linux/types.h>
+#include <sys/syscall.h>
+#include <sched.h>
 
 #include <system_server.h>
 #include <gui.h>
@@ -25,6 +31,7 @@
 #include <shared_memory.h>
 #include <hardware.h>
 
+#define THREAD_COUNT 6
 #define BUF_LEN 1024
 #define TOY_TEST_FS "./fs"
 
@@ -378,6 +385,40 @@ void signal_exit(void)
     pthread_mutex_unlock(&system_loop_mutex);
 }
 
+void *engine_thread(void *arg)
+{
+    char *s = arg;
+    struct sched_param sched;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+
+    printf("%s", s);
+
+    memset(&sched, 0, sizeof(sched));
+    sched.sched_priority = 50;
+
+    printf("fifo thread started [%d]\n", gettid());
+	if (sched_setscheduler(gettid(), SCHED_FIFO, &sched) < 0 ) {
+		fprintf(stderr, "SETSCHEDULER failed - err = %s\n", strerror(errno));
+	} else {
+		printf("Priority set to \"%d\"\n", sched.sched_priority);
+	}
+
+    CPU_SET(0, &set);
+    if (sched_setaffinity(gettid(), sizeof(set), &set) == -1) {
+        perror("sched_setaffinity");
+        exit(EXIT_FAILURE);
+    }
+		
+
+    
+    while (true) {
+        sleep(1);
+    }
+
+    return 0;
+}
+
 int system_server()
 {
     pthread_t watchdog_thread_tid;
@@ -385,7 +426,8 @@ int system_server()
     pthread_t disk_service_thread_tid;
     pthread_t camera_service_thread_tid;
     pthread_t timer_thread_tid;
-    int threads[5];
+    pthread_t engine_thread_tid;
+    int threads[THREAD_COUNT];
 
     printf("나 system_server 프로세스!\n");
 
@@ -405,6 +447,7 @@ int system_server()
     threads[3] = pthread_create(&camera_service_thread_tid, NULL, 
         camera_service_thread, "camera service thread\n");
     threads[4] = pthread_create(&timer_thread_tid, NULL, timer_thread, "timer thread\n");
+    threads[5] = pthread_create(&engine_thread_tid, NULL, engine_thread, "engine thread\n");
 
     puts("system init done.  waiting...");
 
@@ -419,7 +462,7 @@ int system_server()
         posix_sleep_ms(5000);
     }
 
-    for (int i=0; i<5; i++) {
+    for (int i=0; i<THREAD_COUNT; i++) {
         pthread_join(threads[i], NULL);
     }
 
